@@ -1,42 +1,35 @@
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.math.BigInteger;
+import java.security.SecureRandom;
 import java.util.Scanner;
 
 /**
  * <h1>Crypto</h1>
  * <p>This class is a collection of methods for use in the other libraries contained in this project (DHE, RSA, and AES).</p>
  * <p>It uses relatively secure methods for generating large random values and tests for primality.</p>
- * <p>It provides mathematical functions for performing fast modular exponentiation and finding primitive root and modular inverse.</p>
+ * <p>It provides mathematical functions for performing fast modular exponentiation and finding primitive roots and modular inverses.</p>
  */
 public class Crypto {
 
     /**
      * <h3>fastMod</h3>
-     * <p>Implementation of the fast modular exponentiation algorithm using BigInteger</p>
-     * @param g
-     * @param a
-     * @param p
+     * <p>Improved implementation of the fast modular exponentiation algorithm using BigInteger. This version correctly updates intermediate results.</p>
+     * @param g The base
+     * @param a The exponent
+     * @param p The modulus
      * @return The result of g^a mod p
      */
     public static BigInteger fastMod(BigInteger g, BigInteger a, BigInteger p) {
-        int bitWidth = a.bitLength();
-        BigInteger one = new BigInteger("1");
-        BigInteger b = BigInteger.ZERO.add(a);
-        boolean bits[] = new boolean[bitWidth];
-        for (int i = 0; i < bitWidth; i++) {
-            boolean bit = b.and(one).equals(one);
-            bits[bitWidth-i-1] = bit;
-            b.shiftRight(1);
-        }
-
-        BigInteger result =  new BigInteger("1");
-        for (int i = 0; i < bitWidth; i++) {
-            result.pow(2);
-            result.mod(p);
-            if (bits[i]) {
-                result.multiply(g);
-                result.mod(p);
+        BigInteger result = BigInteger.ONE;
+        // Convert the exponent to its binary representation
+        String binaryExp = a.toString(2);
+        for (int i = 0; i < binaryExp.length(); i++) {
+            // Square the current result for every bit.
+            result = result.multiply(result).mod(p);
+            // If the current bit is 1, multiply by the base.
+            if (binaryExp.charAt(i) == '1') {
+                result = result.multiply(g).mod(p);
             }
         }
         return result;
@@ -46,8 +39,8 @@ public class Crypto {
      * <h3>isValidG</h3>
      * <p>Tests candidate generator values (primitive root mod p) for DHE.</p>
      * <p>In order to be a valid generator, g must satisfy the conditions g^2 mod p != 1 and g^q mod p != 1 for p = 2q+1.</p>
-     * @param g
-     * @param p
+     * @param g The candidate generator.
+     * @param p The prime modulus.
      * @return True if g is a valid primitive root mod p, false otherwise.
      */
     public static boolean isValidG(BigInteger g, BigInteger p) {
@@ -55,34 +48,40 @@ public class Crypto {
         if (g.modPow(BigInteger.TWO, p).equals(BigInteger.ONE)) {
             return false;
         }
-        if (g.modPow(q, p).equals(BigInteger.ONE)) {
-            return false;
-        }
-        return true;
+        return !g.modPow(q, p).equals(BigInteger.ONE);
     }
 
     /**
      * <h3>getGenerator</h3>
      * <p>Accepts a target bit width and a prime modulus, and checks candidate generator values starting at a random initial value until it finds a valid primitive root mod p.</p>
-     * @param bits
-     * @param p
-     * @return The first valid generator discovered.
+     * @param bits The target bit width for the generator candidate.
+     * @param p The prime modulus.
+     * @return A valid generator (primitive root) for the modulus.
      */
     public static BigInteger getGenerator(int bits, BigInteger p) {
-        // TODO: Generate an initial g with the given bit width.
-        for (BigInteger g = ; g.compareTo(p) < 0; g.add(BigInteger.ONE)) {
+        // Create a secure random instance
+        SecureRandom random = new SecureRandom();
+        // Generate an initial candidate for g with the given bit width.
+        BigInteger g = new BigInteger(bits, random);
+        // Ensure g is at least 2 (primitive roots must be greater than 1)
+        if (g.compareTo(BigInteger.TWO) < 0) {
+            g = BigInteger.TWO;
+        }
+        // Iterate until a valid generator is found or the candidate exceeds p
+        while (g.compareTo(p) < 0) {
             if (isValidG(g, p)) {
                 return g;
             }
+            g = g.add(BigInteger.ONE);
         }
-        return null;
+        return null; // In theory, for a safe prime, this should never happen.
     }
 
     /**
      * <h3>getRandom</h3>
-     * <p>Securely generates a random BigInteger such that the value is only expressable with a number of bits in the range (minBits, maxBits)</p>
-     * @param minBits
-     * @param maxBits
+     * <p>Securely generates a random BigInteger such that the value is only expressable with a number of bits in the range (minBits, maxBits).</p>
+     * @param minBits The minimum size (bit width).
+     * @param maxBits The maximum size.
      * @return A random BigInteger satisfying the requirements.
      */
     public static BigInteger getRandom(int minBits, int maxBits) {
@@ -95,11 +94,12 @@ public class Crypto {
 
     /**
      * <h3>checkPrime</h3>
-     * <p>Checks a number for primality using three tests: trial division; Fermat's little theorem; and the Miller-Rabin test.</p>
-     * @param p
-     * @param numChecks How many iterations of Fermat's and M-R to perform before deciding that the number is likely prime.
-     * @return True if the number passes all tests, false otherwise.
+     * <p>Checks a number for primality using trial division, Fermat's little theorem, and the Miller-Rabin test.</p>
+     * @param p The candidate prime number.
+     * @param numChecks The number of iterations of testing to perform.
+     * @return True if the number is likely prime, false otherwise.
      */
+    @SuppressWarnings({"CallToPrintStackTrace", "ConvertToTryWithResources"})
     public static boolean checkPrime(BigInteger p, int numChecks) {
         // Trial Division
         boolean isPrime = true;
@@ -129,7 +129,7 @@ public class Crypto {
             }
         }
 
-        // Miller-Rabin
+        // Miller-Rabin Test
         BigInteger s = BigInteger.ZERO;
         BigInteger d = pm;
         while (d.mod(BigInteger.TWO).equals(BigInteger.ZERO)) {
@@ -139,31 +139,26 @@ public class Crypto {
         for (int i = 0; i < numChecks; i++) {
             BigInteger a = getRandom(1, p.bitLength() - 1);
             BigInteger x = fastMod(a, d, p);
-            for (BigInteger j = BigInteger.ZERO;
-                 !j.equals(s);
-                 j = j.add(BigInteger.ONE)) {
-                x = x.pow(2);
-                BigInteger y = x.mod(p);
-                if (y.equals(BigInteger.ONE) && !x.equals(BigInteger.ONE) && !x.equals(pm)) {
+            for (BigInteger j = BigInteger.ZERO; !j.equals(s); j = j.add(BigInteger.ONE)) {
+                x = x.multiply(x).mod(p);
+                if (x.equals(BigInteger.ONE) && !x.equals(BigInteger.ONE) && !x.equals(pm)) {
                     return false;
                 }
-                x = y;
             }
             if (!x.equals(BigInteger.ONE)) {
                 return false;
             }
         }
-
         return isPrime;
     }
 
     /**
      * <h3>getPrime</h3>
      * <p>Generates random numbers and checks them against checkPrime() until one passes the tests.</p>
-     * @param minBits The minimum size (bit width) of the desired prime number.
-     * @param maxBits The maximum size of the desired number.
-     * @param numChecks The number of iterations of primality checking to perform.
-     * @return The generated <i>likely-prime</i> number.
+     * @param minBits The minimum bit width.
+     * @param maxBits The maximum bit width.
+     * @param numChecks The number of iterations for primality checking.
+     * @return A likely prime number.
      */
     public static BigInteger getPrime(int minBits, int maxBits, int numChecks) {
         int i = 0;
@@ -178,30 +173,25 @@ public class Crypto {
 
     /**
      * <h3>getSafePrime</h3>
-     * <p>Generates and checks prime numbers for use in DHE.</p>
-     * <p>A "safe" prime has the form p = 2q+1 where q is a prime number, so we generate candidate values for q, check them for primality, then (for those which are likely prime) check the resulting p for primality.</p>
-     * @return The first discovered safe prime which falls within the specified range.
+     * <p>Generates and checks prime numbers for use in DHE. A "safe" prime is defined as p = 2q+1, where q is also prime.</p>
+     * @return A safe prime number.
      */
     public static BigInteger getSafePrime() {
-        while(true) {
+        while (true) {
             BigInteger q = getPrime(2048, 3072, 10);
-            //System.out.printf("%s is likely prime%n", q);
-            BigInteger p = q;
-            p = p.multiply(BigInteger.TWO);
-            p = p.add(BigInteger.ONE);
+            BigInteger p = q.multiply(BigInteger.TWO).add(BigInteger.ONE);
             if (checkPrime(p, 10)) {
                 return p;
             }
-            //System.out.printf("Failed to find valid p for q = %s%n", q);
         }
     }
 
     /**
      * <h3>gcd</h3>
-     * <p>An implementation of the Euclidean Algorithm for finding the gcd of two numbers a and b (where a > b).</p>
-     * @param a
-     * @param b
-     * @return The result of gcd(a, b).
+     * <p>Finds the greatest common divisor of two numbers using the Euclidean Algorithm.</p>
+     * @param a First number.
+     * @param b Second number.
+     * @return The gcd of a and b.
      */
     public static BigInteger gcd(BigInteger a, BigInteger b) {
         if (b.equals(BigInteger.ZERO)) {
@@ -212,10 +202,10 @@ public class Crypto {
 
     /**
      * <h3>extendedGCD</h3>
-     * <p>An implementation of the extended Euclidean, which returns an array containing [gcd, i, j] where i and j are the coefficients which satisfy ix + jy = gcd(a,b).</p>
-     * @param a
-     * @param b
-     * @return An array containing the values [gcd(a,b), i, j].
+     * <p>Calculates the extended Euclidean algorithm, which returns  satisfying the relation: ax + by = gcd(a, b).</p>
+     * @param a First number.
+     * @param b Second number.
+     * @return An array containing [gcd(a, b), x, y].
      */
     public static BigInteger[] extendedGCD(BigInteger a, BigInteger b) {
         if (b.equals(BigInteger.ZERO)) {
@@ -225,18 +215,17 @@ public class Crypto {
         BigInteger gcd = values[0];
         BigInteger x1 = values[1];
         BigInteger y1 = values[2];
-        //BigInteger x = y1;x
         BigInteger y = x1.subtract(a.divide(b).multiply(y1));
-        System.out.printf("gcd = %s, a = %s, b = %s%n", gcd, y1, y);
+        System.out.printf("gcd = %s, a  = %s, b  = %s%n", gcd, y1, y);
         return new BigInteger[]{gcd, y1, y};
     }
 
     /**
      * <h3>modularInverse</h3>
      * <p>Computes the modular inverse (private key) of an RSA public key given e and phi.</p>
-     * @param e
-     * @param phi
-     * @return The modular inverse (private key) value.
+     * @param e The public exponent.
+     * @param phi Euler's totient function value.
+     * @return The modular inverse of e modulo phi.
      */
     public static BigInteger modularInverse(BigInteger e, BigInteger phi) {
         BigInteger[] result = extendedGCD(e, phi);

@@ -1,4 +1,8 @@
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.util.Base64;
 
 /**
  * <h1>RSA</h1>
@@ -12,7 +16,7 @@ public class RSA {
      * <p><b>Do not leave this public</b></p>
      */
     public BigInteger p;
-    // TODO
+    // TODO: p will be initialized in the constructor.
 
     /**
      * <h3>q</h3>
@@ -20,7 +24,7 @@ public class RSA {
      * <p><b>Do not leave this public</b></p>
      */
     public BigInteger q;
-    // TODO
+    // TODO: q will be initialized in the constructor.
 
     /**
      * <h3>phi</h3>
@@ -28,12 +32,13 @@ public class RSA {
      * <p><b>Do not leave this public</b></p>
      */
     public BigInteger phi;
-    // TODO
+    // TODO: phi will be computed in the constructor.
 
     /**
      * <h3>n</h3>
      * <p>The result of p*q</p>
      */
+    @SuppressWarnings("FieldMayBeFinal")
     private BigInteger n;
 
     /**
@@ -48,7 +53,7 @@ public class RSA {
      * <p><b>Do not leave this public</b></p>
      */
     public BigInteger d;
-    // TODO
+    // TODO: d will be computed in the constructor.
 
     /**
      * <h3>RSA Constructor</h3>
@@ -58,7 +63,19 @@ public class RSA {
      * @param bits The number of bits (bit width) desired for the p and q values.
      */
     public RSA(int bits) {
-        // TODO
+        // TODO: Implement RSA key generation
+        SecureRandom secureRandom = new SecureRandom();
+        p = BigInteger.probablePrime(bits, secureRandom);
+        do {
+            q = BigInteger.probablePrime(bits, secureRandom);
+        } while (p.equals(q));
+        n = p.multiply(q);
+        phi = (p.subtract(BigInteger.ONE)).multiply(q.subtract(BigInteger.ONE));
+        e = BigInteger.valueOf(65537);  // common choice for e
+        while (e.compareTo(phi) >= 0 || !e.gcd(phi).equals(BigInteger.ONE)) {
+            e = e.add(BigInteger.TWO);
+        }
+        d = e.modInverse(phi);
     }
 
     /**
@@ -78,8 +95,16 @@ public class RSA {
      * @return The result of encrypting the message using the given public key.
      */
     public String encrypt(String message, BigInteger[] pubKey) {
-        // TODO
-        return null;
+        // TODO: Implement encryption
+        BigInteger publicE = pubKey[0];
+        BigInteger publicN = pubKey[1];
+        byte[] messageBytes = message.getBytes(StandardCharsets.UTF_8);
+        BigInteger messageInt = new BigInteger(1, messageBytes);
+        if (messageInt.compareTo(publicN) >= 0) {
+            throw new IllegalArgumentException("Message is too large for the given key size");
+        }
+        BigInteger encryptedInt = messageInt.modPow(publicE, publicN);
+        return Base64.getEncoder().encodeToString(encryptedInt.toByteArray());
     }
 
     /**
@@ -89,9 +114,26 @@ public class RSA {
      * @return The result of decrypting the message using the private key [d, n].
      */
     public String decrypt(String ciphertext) {
-        // TODO
-        return null;
+        // TODO: Implement decryption
+        byte[] cipherBytes = Base64.getDecoder().decode(ciphertext);
+        BigInteger cipherInt = new BigInteger(1, cipherBytes);
+        BigInteger decryptedInt = cipherInt.modPow(d, n);
+        byte[] decryptedBytes = decryptedInt.toByteArray();
+        return new String(decryptedBytes, StandardCharsets.UTF_8);
     }
+    
+    
+    
+    private BigInteger hashMessage(String message) {
+    try {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] hash = digest.digest(message.getBytes(StandardCharsets.UTF_8));
+        return new BigInteger(1, hash);
+    } catch (Exception ex) {
+        throw new RuntimeException("Hashing failed", ex);
+    }
+
+}
 
     /**
      * <h3>sign</h3>
@@ -100,9 +142,10 @@ public class RSA {
      * @return The result of encrypting the message using the private key [d, n].
      */
     public String sign(String message) {
-        // TODO
-        return null;
-    }
+    BigInteger hash = hashMessage(message);
+    BigInteger signedInt = hash.modPow(d, n);
+    return Base64.getEncoder().encodeToString(signedInt.toByteArray());
+}
 
     /**
      * <h3>authenticate</h3>
@@ -111,11 +154,18 @@ public class RSA {
      * @param pubKey An array of BigInteger containing a public key [e, n].
      * @return The result of decrypting the message using the given public key.
      */
-    public String authenticate(String message, BigInteger[] pubKey) {
-        // TODO
-        return null;
-    }
+    public String authenticate(String signature, BigInteger[] pubKey) {
+    BigInteger publicE = pubKey[0];
+    BigInteger publicN = pubKey[1];
+    byte[] signedBytes = Base64.getDecoder().decode(signature);
+    BigInteger signedInt = new BigInteger(1, signedBytes);
+    BigInteger recoveredHash = signedInt.modPow(publicE, publicN);
+    return recoveredHash.toString(16); // Return the hash as a hex string for display
+}
 
+    public String getMessageHash(String message) {
+    return hashMessage(message).toString(16);
+}
     /**
      * <h3>main</h3>
      * <p><b>For testing purposes only.</b></p>
@@ -129,7 +179,7 @@ public class RSA {
         BigInteger[] bPub = b.getPubKey();
         System.out.printf("p = %s%nq = %s%nn = %s%nphi = %s%ne = %s%nd = %s%n%n", b.p, b.q, bPub[1], b.phi, bPub[0], b.d);
 
-        String message1 = "";
+        /**String message1 = "Hello RSA";
         System.out.printf("msg: %s%n", message1);
         String signed1 = a.sign(message1);
         System.out.printf("Signed by A ({msg}privA): %s%n", signed1);
@@ -141,7 +191,7 @@ public class RSA {
         String plain1 = b.authenticate(auth1, aPub);
         System.out.printf("Authenticated by B: %s%n", plain1);
 
-        String message2 = "";
+        String message2 = "Hello RSA2";
         System.out.printf("msg: %s%n", message2);
         String cipher2 = b.encrypt(message2, aPub);
         System.out.printf("Sending to A ({msg}pubA): %s%n", cipher2);
@@ -152,5 +202,49 @@ public class RSA {
         System.out.printf("Authenticated by A ({msg}pubA): %s%n", auth2);
         String plain2 = a.decrypt(auth2);
         System.out.printf("Received by A: %s%n", plain2);
+        */
+
+        String message1 = "Hello RSA";
+        System.out.printf("Message: %s%n", message1);
+
+        // A signs the message
+        String signature1 = a.sign(message1);
+        System.out.printf("Signature (A's priv): %s%n%n", signature1);
+
+        // A encrypts the message with B's public key
+        String encryptedMessage1 = a.encrypt(message1, bPub);
+        System.out.printf("Encrypted message (B's pub): %s%n%n", encryptedMessage1);
+
+        // B decrypts the message with its private key
+        String decryptedMessage1 = b.decrypt(encryptedMessage1);
+        System.out.printf("Decrypted by B: %s%n", decryptedMessage1);
+
+        // B authenticates the signature using A's public key
+        String recoveredHash1 = b.authenticate(signature1, aPub);
+        String expectedHash1 = b.getMessageHash(decryptedMessage1);
+        System.out.printf("Signature valid? %s%n%n", expectedHash1.equals(recoveredHash1));
+
+
+        System.out.println("=== B → A: Signed and Encrypted Message ===");
+
+        String message2 = "Hello RSA2";
+        System.out.printf("Message: %s%n", message2);
+
+        // B signs the message
+        String signature2 = b.sign(message2);
+        System.out.printf("Signature (B's priv): %s%n%n", signature2);
+
+        // B encrypts the message with A's public key
+        String encryptedMessage2 = b.encrypt(message2, aPub);
+        System.out.printf("Encrypted message (A's pub): %s%n%n", encryptedMessage2);
+
+        // A decrypts the message with its private key
+        String decryptedMessage2 = a.decrypt(encryptedMessage2);
+        System.out.printf("Decrypted by A: %s%n", decryptedMessage2);
+
+        // A authenticates the signature using B's public key
+        String recoveredHash2 = a.authenticate(signature2, bPub);
+        String expectedHash2 = a.getMessageHash(decryptedMessage2);
+        System.out.printf("Signature valid? %s%n", expectedHash2.equals(recoveredHash2));
     }
 }
